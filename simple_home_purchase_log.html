@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>سجل مشتريات البيت</title>
+<style>
+body{margin:0;background:#f6f7f9;font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;color:#111827}
+.wrap{max-width:760px;margin:auto;padding:14px 14px 90px}
+h1{font-size:22px;margin:6px 0 4px}
+p{color:#6b7280;font-size:13px;margin:0 0 14px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:1.4fr .8fr .8fr;gap:8px}
+@media(max-width:620px){.grid{grid-template-columns:1fr}}
+label{font-size:12px;color:#6b7280;display:block;margin-bottom:5px}
+input,button{width:100%;font:inherit;box-sizing:border-box}
+input{padding:12px;border:1px solid #d1d5db;border-radius:12px;background:#fff}
+button{border:0;border-radius:12px;padding:12px;font-weight:700;cursor:pointer}
+.primary{background:#2563eb;color:#fff}
+.secondary{background:#eef2f7;color:#111827}
+.actions{display:flex;gap:8px;margin-top:10px}
+.actions button{flex:1}
+.table-wrap{overflow:auto;border:1px solid #e5e7eb;border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:700px}
+th,td{padding:10px;border-bottom:1px solid #e5e7eb;text-align:right;font-size:13px;white-space:nowrap}
+th{background:#f9fafb}
+.small{font-size:12px;color:#6b7280}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.kpi{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:12px}
+.kpi b{font-size:18px}
+.rowbtn{width:auto;padding:6px 9px;background:#f3f4f6;border-radius:8px}
+.search{margin-bottom:10px}
+.footer{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.96);border-top:1px solid #e5e7eb;padding:10px}
+.footer .inner{max-width:760px;margin:auto;display:flex;gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>سجل مشتريات البيت</h1>
+  <p>اكتب اسم الصنف والكمية والسعر فقط. التاريخ يتسجل تلقائيًا وقت الحفظ.</p>
+
+  <div class="card">
+    <div class="grid">
+      <div>
+        <label>اسم الصنف</label>
+        <input id="item" placeholder="مثال: بطاطس">
+      </div>
+      <div>
+        <label>الكمية</label>
+        <input id="qty" placeholder="مثال: 3 كيلو">
+      </div>
+      <div>
+        <label>السعر</label>
+        <input id="price" type="number" inputmode="decimal" step="0.01" min="0" placeholder="مثال: 45">
+      </div>
+    </div>
+    <div class="actions">
+      <button class="primary" id="save">حفظ</button>
+      <button class="secondary" id="clear">مسح</button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="small">إجمالي المصروف</div><b id="total">0 ج</b></div>
+    <div class="kpi"><div class="small">عدد العمليات</div><b id="count">0</b></div>
+  </div>
+
+  <div class="card">
+    <input class="search" id="search" placeholder="ابحث عن صنف...">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>التاريخ</th>
+            <th>الصنف</th>
+            <th>الكمية</th>
+            <th>السعر</th>
+            <th>استمر كام يوم</th>
+            <th>الشراء التالي</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <div class="inner">
+    <button class="secondary" id="export">تصدير نسخة</button>
+    <button class="secondary" id="import">استيراد نسخة</button>
+    <input id="file" type="file" accept=".json,application/json" hidden>
+  </div>
+</div>
+
+<script>
+const KEY='simpleHomePurchases_v2';
+let rows=JSON.parse(localStorage.getItem(KEY)||'[]');
+const $=id=>document.getElementById(id);
+
+function nowStamp(){
+  const d=new Date();
+  return {
+    iso:d.toISOString(),
+    date:d.toLocaleDateString('ar-EG'),
+    dayKey:d.toISOString().slice(0,10)
+  };
+}
+function saveData(){localStorage.setItem(KEY,JSON.stringify(rows));render();}
+function daysBetween(a,b){
+  const da=new Date(a+'T12:00:00'), db=new Date(b+'T12:00:00');
+  return Math.round((db-da)/86400000);
+}
+function enriched(){
+  const sorted=[...rows].sort((a,b)=>a.iso.localeCompare(b.iso));
+  const byItem={};
+  sorted.forEach(r=>(byItem[r.item.trim().toLowerCase()] ||= []).push(r));
+  const info={};
+  Object.values(byItem).forEach(list=>{
+    for(let i=0;i<list.length-1;i++){
+      const cur=list[i], nxt=list[i+1];
+      info[cur.id]={nextDate:nxt.date,days:daysBetween(cur.dayKey,nxt.dayKey)};
+    }
+  });
+  return rows.map(r=>({...r,...(info[r.id]||{})}));
+}
+function render(){
+  const q=$('search').value.trim().toLowerCase();
+  const data=enriched()
+    .filter(r=>!q||r.item.toLowerCase().includes(q))
+    .sort((a,b)=>b.iso.localeCompare(a.iso));
+
+  $('tbody').innerHTML=data.map(r=>`
+    <tr>
+      <td>${r.date}</td>
+      <td>${r.item}</td>
+      <td>${r.qty}</td>
+      <td>${Number(r.price).toLocaleString('ar-EG',{maximumFractionDigits:2})} ج</td>
+      <td>${r.days!=null?r.days+' يوم':'—'}</td>
+      <td>${r.nextDate||'—'}</td>
+      <td><button class="rowbtn" onclick="delRow('${r.id}')">حذف</button></td>
+    </tr>`).join('') || `<tr><td colspan="7" class="small">لسه مفيش بيانات.</td></tr>`;
+
+  $('total').textContent=rows.reduce((s,r)=>s+Number(r.price||0),0).toLocaleString('ar-EG',{maximumFractionDigits:2})+' ج';
+  $('count').textContent=rows.length;
+}
+window.delRow=id=>{
+  if(confirm('حذف العملية دي؟')){rows=rows.filter(r=>r.id!==id);saveData();}
+};
+$('save').onclick=()=>{
+  const item=$('item').value.trim();
+  const qty=$('qty').value.trim();
+  const price=$('price').value.trim();
+  if(!item){alert('اكتب اسم الصنف');return;}
+  if(!qty){alert('اكتب الكمية');return;}
+  if(price===''){alert('اكتب السعر');return;}
+  const t=nowStamp();
+  rows.push({
+    id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'_'+Math.random()),
+    item,qty,price:Number(price),...t
+  });
+  saveData();
+  $('item').value=''; $('qty').value=''; $('price').value='';
+  $('item').focus();
+};
+$('clear').onclick=()=>{$('item').value='';$('qty').value='';$('price').value='';};
+$('search').oninput=render;
+
+$('export').onclick=()=>{
+  const blob=new Blob([JSON.stringify(rows,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='home-purchases-backup.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('import').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  const f=e.target.files[0]; if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!Array.isArray(d))throw new Error();
+    if(confirm('استبدال البيانات الحالية بالنسخة دي؟')){rows=d;saveData();}
+  }catch{alert('الملف غير صالح');}
+  e.target.value='';
+};
+render();
+</script>
+</body>
+</html>
